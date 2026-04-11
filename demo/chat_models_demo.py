@@ -2,23 +2,19 @@ import os
 import pathlib
 
 
-def check_line_direction(baseline_seg: dict) -> dict:
+def check_line_direction(baseline_seg):
     """Check if the lines are oriented top to bottom, if not inverse their direction.
     
     Parameters:
-        baseline_seg (dict): A dictionary containing segmentation output
+        baseline_seg (kraken.containers.Segmentation): Segmentation output
     
     Return: 
-        baseline_seg (dict): A dictionary containing segmentation output with corrected line direction
+        baseline_seg (kraken.containers.Segmentation): Segmentation output with corrected line direction
     """
-    
-    lines = []
-    for line in baseline_seg["lines"]:
-        if line["baseline"][0][1] > line["baseline"][-1][1]:
-            line["baseline"].reverse()
-        lines.append(line)
-    
-    baseline_seg["lines"] = lines
+
+    for line in baseline_seg.lines:
+        if line.baseline and line.baseline[0][1] > line.baseline[-1][1]:
+            line.baseline.reverse()
 
     return baseline_seg
 
@@ -40,9 +36,11 @@ if __name__ == '__main__':
     torch.set_num_threads(1)
 
     # Set paths
-    cwd = pathlib.Path.cwd()
-    models_dir = cwd / "models"
-    test_dir = cwd / "test" 
+    repo_root = pathlib.Path(__file__).resolve().parent.parent
+    models_dir = repo_root / "models"
+    test_dir = repo_root / "test"
+    if not test_dir.exists():
+        test_dir = repo_root / "demo"
     seg_model_path = models_dir / "chat_seg.mlmodel"
     rec_model_path = models_dir / "chat_rec.mlmodel"
 
@@ -54,7 +52,11 @@ if __name__ == '__main__':
     seg_model = vgsl.TorchVGSLModel.load_model(seg_model_path)
     rec_model = models.load_any(rec_model_path)
 
-    for img_path in test_dir.glob("*.png"):
+    image_paths = sorted(test_dir.glob("*.png"))
+    if not image_paths:
+        raise FileNotFoundError(f"No PNG files found in {test_dir}")
+
+    for img_path in image_paths:
         # Load image
         img = Image.open(img_path)
 

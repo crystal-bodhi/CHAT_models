@@ -141,6 +141,70 @@ def dump_segmentation_overlay(output_dir, image_path, src_img, seg):
     log(f"wrote segmentation overlay to {output_path}")
 
 
+def collect_raw_baselines(proc_img, seg_model):
+    from kraken import blla
+    from kraken.lib.segmentation import scale_regions, vectorize_lines
+
+    rets = blla.compute_segmentation_map(proc_img, model=seg_model)
+    cls_map = rets["cls_map"]
+    start_sep = cls_map["aux"]["_start_separator"]
+    end_sep = cls_map["aux"]["_end_separator"]
+    baselines = []
+
+    for baseline_type, idx in cls_map["baselines"].items():
+        candidates = vectorize_lines(
+            rets["heatmap"][(start_sep, end_sep, idx), :, :],
+            text_direction="vertical",
+        )
+        scaled_candidates = scale_regions(candidates, rets["scale"])
+        for baseline in scaled_candidates:
+            baselines.append(
+                {
+                    "baseline_type": baseline_type,
+                    "baseline": baseline,
+                }
+            )
+
+    return baselines
+
+
+def dump_raw_baselines(output_dir, image_path, src_img, baselines):
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    data_path = output_dir / f"{image_path.stem}.raw-baselines.jsonl"
+    with data_path.open("w", encoding="utf-8") as handle:
+        for idx, baseline in enumerate(baselines, start=1):
+            payload = {
+                "index": idx,
+                "baseline_type": baseline["baseline_type"],
+                "baseline": baseline["baseline"],
+            }
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    log(f"wrote raw baselines to {data_path}")
+
+    overlay_path = output_dir / f"{image_path.stem}.raw-baselines.overlay.png"
+    overlay = src_img.convert("RGB").copy()
+
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(overlay)
+    palette = {
+        "default": (255, 80, 80),
+        "DoubleLine": (80, 200, 255),
+    }
+    for baseline in baselines:
+        color = palette.get(baseline["baseline_type"], (255, 170, 0))
+        draw.line([tuple(point) for point in baseline["baseline"]], fill=color, width=2)
+
+    overlay.save(overlay_path)
+    log(f"wrote raw baseline overlay to {overlay_path}")
+
+    counts = {}
+    for baseline in baselines:
+        counts[baseline["baseline_type"]] = counts.get(baseline["baseline_type"], 0) + 1
+    log(f"raw baseline counts: {counts}")
+
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -199,6 +263,10 @@ if __name__ == "__main__":
 
         log(f"segmenting {img_path.name}")
         if args.segmentation_mode == "baseline":
+            if args.output_dir:
+                log(f"collecting raw baselines for {img_path.name}")
+                raw_baselines = collect_raw_baselines(proc_img, seg_model)
+                dump_raw_baselines(args.output_dir, pathlib.Path(img_path), src_img, raw_baselines)
             seg = blla.segment(
                 proc_img,
                 text_direction="vertical-rl",

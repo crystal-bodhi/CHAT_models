@@ -62,6 +62,13 @@ def parse_args():
         help="Raise baseline polygonizer errors instead of logging warnings.",
     )
     parser.add_argument(
+        "--legacy-polygons",
+        dest="no_legacy_polygons",
+        action="store_false",
+        help="Use the old legacy polygon extractor in recognition for debugging.",
+    )
+    parser.set_defaults(no_legacy_polygons=True)
+    parser.add_argument(
         "--output-dir",
         type=pathlib.Path,
         help="Optional directory for OCR text, segmentation overlay, and geometry dumps.",
@@ -247,6 +254,10 @@ if __name__ == "__main__":
     log(f"loading recognition model: {rec_model_path}")
     rec_model = models.load_any(rec_model_path)
     log("models loaded")
+    if args.no_legacy_polygons:
+        log("recognition uses modern polygon extraction by default for CHAT models")
+    else:
+        log("recognition uses legacy polygon extraction")
     log(f"processing {len(image_paths)} image(s) with {args.segmentation_mode} segmentation")
 
     for img_path in image_paths:
@@ -283,7 +294,15 @@ if __name__ == "__main__":
 
         records = []
         log(f"recognizing {img_path.name}")
-        for idx, record in enumerate(rpred.rpred(rec_model, proc_img, seg), start=1):
+        for idx, record in enumerate(
+            rpred.rpred(
+                rec_model,
+                proc_img,
+                seg,
+                no_legacy_polygons=args.no_legacy_polygons,
+            ),
+            start=1,
+        ):
             text = str(record)
             records.append(text)
             print(text)
